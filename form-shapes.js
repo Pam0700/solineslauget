@@ -172,7 +172,7 @@
       });
     }
 
-    const finalDrawingXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n${drawingHeader}${allAnchorsXml}</xdr:wsDr>`;
+    const finalDrawingXml = '<' + '?xml version="1.0" encoding="UTF-8" standalone="yes"?' + `>\n${drawingHeader}${allAnchorsXml}</xdr:wsDr>`;
     outZip.file('xl/drawings/drawing1.xml', finalDrawingXml);
 
     // 1. Cập nhật [Content_Types].xml
@@ -204,7 +204,7 @@
         outZip.file(relsPath, relsXml);
       }
     } else {
-      const newRelsXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="${rId}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" Target="../drawings/drawing1.xml"/></Relationships>`;
+      const newRelsXml = '<' + '?xml version="1.0" encoding="UTF-8" standalone="yes"?' + `>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="${rId}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" Target="../drawings/drawing1.xml"/></Relationships>`;
       outZip.file(relsPath, newRelsXml);
     }
 

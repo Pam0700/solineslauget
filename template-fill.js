@@ -387,7 +387,7 @@
 
     const rawBuf = await wb.xlsx.writeBuffer();
     // Đính kèm sẵn drawing XML chữ ký vào cuối Vùng 1 (dòng 32) và Vùng 2 (dòng 70)
-    return await global.FormShapesModule.injectFormSignatureShapes(null, rawBuf, [32, 70]);
+    return await safeInjectSignatureShapes(null, rawBuf, [32, 70]);
   }
 
   /**
@@ -952,7 +952,7 @@
     }
 
     // Dùng JSZip chèn lại các hình vẽ / Text Box chữ ký vào cuối mỗi vùng & đồng bộ theme1.xml
-    outBuffer = await global.FormShapesModule.injectFormSignatureShapes(
+    outBuffer = await safeInjectSignatureShapes(
       activeTemplateBuffer,
       outBuffer,
       zoneFooterRows

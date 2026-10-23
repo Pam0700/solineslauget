@@ -1042,6 +1042,15 @@
     if (searchParams.get('page') === 'admin' || window.location.pathname.endsWith('/admin') || window.__IS_ADMIN_ROUTE__) {
       state.isAdminRoute = true;
     }
+    if (typeof google !== 'undefined' && google.script && google.script.url) {
+      google.script.url.getLocation(function(loc) {
+        if (loc && loc.parameter && loc.parameter.page === 'admin') {
+          state.isAdminRoute = true;
+          applyAdminRouteUI();
+          switchView('view-admin-rules');
+        }
+      });
+    }
 
     document.getElementById('btnToggleDrawer').addEventListener('click', () => toggleDrawer());
     document.getElementById('btnCloseDrawer').addEventListener('click', () => toggleDrawer(false));

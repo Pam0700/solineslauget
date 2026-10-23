@@ -37,7 +37,7 @@
     const escaped = kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     // Nếu từ khóa bắt đầu bằng số (vd 5kg, 500g), phía trước không được là chữ số, dấu chấm hoặc dấu phẩy thập phân
     if (/^\d/.test(kw)) {
-      const re = new RegExp(`(?<![0-9.,])${escaped}(?![a-z0-9])`, 'i');
+      const re = new RegExp(`(?:^|[^0-9.,])${escaped}(?![a-z0-9])`, 'i');
       return re.test(normText);
     } else {
       // Từ khóa chữ (TF, Khay, Go...): biên từ không phải chữ/số
