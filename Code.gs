@@ -1,9 +1,11 @@
 // ==================== Google Apps Script: Code.gs ====================
 function doGet(e) {
-  var isAdminPage = (e && e.parameter && e.parameter.page === 'admin');
-  var template = HtmlService.createTemplateFromFile('Index');
-  template.isAdminRoute = isAdminPage;
-  return template.evaluate()
+  var isAdminPage = Boolean(e && e.parameter && e.parameter.page === 'admin');
+  var html = HtmlService.createHtmlOutputFromFile('Index').getContent();
+  if (isAdminPage) {
+    html = '<script>window.__IS_ADMIN_ROUTE__ = true;</script>\n' + html;
+  }
+  return HtmlService.createHtmlOutput(html)
     .setTitle('Công cụ Xử lý Giao hàng & Báo cáo Excel')
     .addMetaTag('viewport', 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no')
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
