@@ -1,0 +1,732 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Xử lý Giao hàng &amp; Xuất Báo cáo Excel</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      width: 100%; height: 100%; overflow: hidden;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      font-size: 13.5px; color: #1e293b; background: #f8fafc;
+      -webkit-tap-highlight-color: transparent;
+    }
+    /* KHÓA BỐ CỤC: khung cố định (position:fixed), chỉ vùng nội dung cuộn */
+    .app {
+      position: fixed; inset: 0;
+      display: flex; flex-direction: column;
+      width: 100%; height: 100%; overflow: hidden;
+      background: #f8fafc;
+    }
+    /* Thanh đỉnh tối giản với nút ☰ mở menu dạng ngăn kéo */
+    .topbar {
+      height: 48px; flex-shrink: 0;
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 14px; background: #ffffff;
+      border-bottom: 1px solid #e2e8f0;
+      z-index: 20;
+    }
+    .topbar-left { display: flex; align-items: center; gap: 10px; min-width: 0; }
+    .topbar-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+    .btn-menu {
+      width: 34px; height: 34px; border-radius: 6px;
+      border: 1px solid #cbd5e1; background: #fff; color: #0f172a;
+      font-size: 18px; line-height: 1; cursor: pointer;
+      display: inline-flex; align-items: center; justify-content: center;
+    }
+    .btn-menu:hover { background: #f1f5f9; }
+    .app-title {
+      font-weight: 600; font-size: 14.5px; color: #0f172a;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .badge-mode {
+      font-size: 11.5px; font-weight: 600; padding: 3px 8px;
+      border-radius: 999px; border: 1px solid #cbd5e1;
+      background: #f1f5f9; color: #475569; cursor: pointer;
+    }
+    .badge-mode.active-admin {
+      background: #fef3c7; border-color: #f59e0b; color: #92400e;
+    }
+
+    /* Lớp phủ mờ nằm TRONG khung .app (cùng ngăn xếp với menu) */
+    .drawer-backdrop {
+      position: absolute; inset: 0;
+      background: rgba(15, 23, 42, 0.42);
+      z-index: 40;
+      opacity: 0; pointer-events: none;
+      transition: opacity 0.2s ease;
+    }
+    .drawer-backdrop.open {
+      opacity: 1; pointer-events: auto;
+    }
+
+    /* Ngăn kéo Menu ẩn bên trái (cùng stacking context trong .app, z-index 50 > backdrop 40) */
+    .sidebar-drawer {
+      position: absolute; top: 0; left: 0; bottom: 0;
+      width: 265px; max-width: 82vw;
+      background: #ffffff; border-right: 1px solid #e2e8f0;
+      z-index: 50;
+      transform: translateX(-100%);
+      transition: transform 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+      display: flex; flex-direction: column;
+      box-shadow: 4px 0 24px rgba(15, 23, 42, 0.12);
+    }
+    .sidebar-drawer.open {
+      transform: translateX(0);
+    }
+    .drawer-header {
+      height: 48px; padding: 0 14px;
+      display: flex; align-items: center; justify-content: space-between;
+      border-bottom: 1px solid #e2e8f0; font-weight: 600; color: #0f172a;
+    }
+    .drawer-nav {
+      flex: 1; overflow-y: auto; padding: 10px 8px;
+    }
+    .nav-group-label {
+      font-size: 11px; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 0.04em; color: #64748b;
+      padding: 10px 10px 4px;
+    }
+    .nav-item {
+      width: 100%; border: none; background: transparent;
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 9px 10px; border-radius: 6px;
+      font-size: 13.5px; font-weight: 500; color: #334155;
+      cursor: pointer; text-align: left; margin-bottom: 2px;
+    }
+    .nav-item:hover { background: #f1f5f9; color: #0f172a; }
+    .nav-item.active { background: #eff6ff; color: #1d4ed8; font-weight: 600; }
+    .step-tick {
+      font-size: 12px; font-weight: 700; color: #16a34a;
+      background: #dcfce7; border-radius: 999px;
+      padding: 1px 6px; display: none;
+    }
+    .step-tick.done { display: inline-block; }
+
+    /* Vùng nội dung chính chỉ cuộn dọc độc lập */
+    .main-scroll {
+      flex: 1; overflow-y: auto; overflow-x: hidden;
+      padding: 16px;
+    }
+    .container {
+      max-width: 1120px; margin: 0 auto;
+      display: flex; flex-direction: column; gap: 14px;
+    }
+    .view-panel { display: none; flex-direction: column; gap: 14px; }
+    .view-panel.active { display: flex; }
+
+    /* Thẻ giao diện tối giản */
+    .card {
+      background: #ffffff; border: 1px solid #e2e8f0;
+      border-radius: 8px; padding: 14px;
+    }
+    .card-header {
+      display: flex; align-items: center; justify-content: space-between;
+      flex-wrap: wrap; gap: 8px; margin-bottom: 10px;
+    }
+    .card-title { font-size: 14px; font-weight: 600; color: #0f172a; }
+    .grid-2 {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 12px;
+    }
+    .field-row {
+      display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+      margin-bottom: 8px;
+    }
+    .label { font-size: 12.5px; font-weight: 500; color: #475569; }
+    .input, .textarea, .select {
+      padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 6px;
+      font-size: 13px; font-family: inherit; color: #0f172a; background: #fff;
+      width: 100%;
+    }
+    .input:focus, .textarea:focus, .select:focus { outline: none; border-color: #2563eb; }
+    .file-box {
+      border: 1px dashed #94a3b8; border-radius: 6px; padding: 12px;
+      background: #f8fafc; display: flex; flex-direction: column; gap: 6px;
+    }
+
+    /* Nút bấm */
+    .btn {
+      display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+      padding: 7px 12px; border-radius: 6px; font-size: 13px; font-weight: 500;
+      border: 1px solid #cbd5e1; background: #ffffff; color: #1e293b;
+      cursor: pointer; white-space: nowrap; transition: background 0.15s;
+    }
+    .btn:hover { background: #f1f5f9; }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-primary { background: #2563eb; border-color: #2563eb; color: #ffffff; }
+    .btn-primary:hover { background: #1d4ed8; }
+    .btn-success { background: #16a34a; border-color: #16a34a; color: #ffffff; }
+    .btn-success:hover { background: #15803d; }
+    .btn-warning { background: #d97706; border-color: #d97706; color: #ffffff; }
+    .btn-warning:hover { background: #b45309; }
+    .btn-sm { padding: 4px 8px; font-size: 12px; }
+
+    /* Danh sách chọn Ship / Code */
+    .list-box {
+      border: 1px solid #e2e8f0; border-radius: 6px;
+      max-height: 290px; overflow-y: auto; background: #fff;
+    }
+    .list-item {
+      display: flex; align-items: flex-start; gap: 8px;
+      padding: 7px 10px; border-bottom: 1px solid #f1f5f9;
+      cursor: pointer; font-size: 13px;
+    }
+    .list-item:last-child { border-bottom: none; }
+    .list-item:hover { background: #f8fafc; }
+    .list-item input[type="checkbox"] { margin-top: 3px; flex-shrink: 0; }
+    .code-line-main { font-weight: 500; color: #0f172a; }
+    .code-line-sub { font-size: 11.5px; color: #64748b; margin-top: 2px; }
+
+    /* Bảng dữ liệu */
+    .table-wrap {
+      width: 100%; overflow-x: auto; border: 1px solid #e2e8f0; border-radius: 6px;
+    }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th, td {
+      border: 1px solid #e2e8f0; padding: 7px 10px; text-align: left; vertical-align: middle;
+    }
+    th { background: #f1f5f9; font-weight: 600; color: #1e293b; }
+    tr.zone-sep td {
+      background: #ffd966 !important; height: 10px !important; padding: 0 !important;
+    }
+    td.unshortened-cell { background: #fff9db; }
+    td.pre-line { white-space: pre-line; }
+
+    /* Hộp cảnh báo & thông báo */
+    .alert-box {
+      padding: 10px 12px; border-radius: 6px; font-size: 12.5px;
+      background: #fffbeb; border: 1px solid #fde68a; color: #92400e;
+      display: none; flex-direction: column; gap: 4px;
+    }
+    .alert-box.show { display: flex; }
+    .status-pill {
+      display: inline-block; font-size: 12px; padding: 2px 8px;
+      border-radius: 999px; background: #e2e8f0; color: #334155;
+    }
+    .status-pill.ok { background: #dcfce7; color: #166534; }
+    .status-pill.warn { background: #fef3c7; color: #92400e; }
+
+    .ship-chip {
+      display: inline-block; font-size: 11.5px; font-weight: 600;
+      padding: 1px 6px; border-radius: 4px;
+      background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe;
+      margin-right: 4px;
+    }
+
+    .toast-bar {
+      position: fixed; bottom: 14px; right: 14px;
+      background: #0f172a; color: #fff; padding: 9px 14px;
+      border-radius: 6px; font-size: 13px; z-index: 90;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.18);
+      display: none;
+    }
+    .toast-bar.show { display: block; }
+  </style>
+</head>
+<body>
+  <div class="app" id="appRoot">
+    <!-- Thanh điều hướng trên cùng -->
+    <header class="topbar">
+      <div class="topbar-left">
+        <button type="button" class="btn-menu" id="btnToggleDrawer" aria-label="Mở menu">☰</button>
+        <span class="app-title" id="currentViewTitle">1. Tải dữ liệu</span>
+      </div>
+      <div class="topbar-right">
+        <span class="status-pill" id="sysRuleStatus">Quy ước: Đang nạp...</span>
+        <button type="button" class="badge-mode" id="btnSwitchAdminMode" title="Chuyển chế độ Thường / Admin (?page=admin)">Chế độ: Thường</button>
+      </div>
+    </header>
+
+    <!-- Lớp phủ mờ nằm TRONG khung .app -->
+    <div class="drawer-backdrop" id="drawerBackdrop"></div>
+
+    <!-- Menu trái dạng ngăn kéo ẩn -->
+    <aside class="sidebar-drawer" id="sidebarDrawer">
+      <div class="drawer-header">
+        <span>Danh mục</span>
+        <button type="button" class="btn btn-sm" id="btnCloseDrawer">✕</button>
+      </div>
+      <nav class="drawer-nav">
+        <div class="nav-group-label">Quy trình chính</div>
+        <button type="button" class="nav-item active" data-view="view-upload">
+          <span>1. Tải dữ liệu</span>
+          <span class="step-tick" id="tickStep1">✓</span>
+        </button>
+        <button type="button" class="nav-item" data-view="view-select">
+          <span>2. Chọn &amp; xử lý</span>
+          <span class="step-tick" id="tickStep2">✓</span>
+        </button>
+        <button type="button" class="nav-item" data-view="view-result">
+          <span>3. Kết quả</span>
+          <span class="step-tick" id="tickStep3">✓</span>
+        </button>
+        <button type="button" class="nav-item" data-view="view-form">
+          <span>4. Điền form báo cáo</span>
+          <span class="step-tick" id="tickStep4">✓</span>
+        </button>
+        <button type="button" class="nav-item" data-view="view-dispatch">
+          <span>5. Xuất theo Điều xe (.zip)</span>
+          <span class="step-tick" id="tickStep5">✓</span>
+        </button>
+
+        <div class="nav-group-label">Công cụ</div>
+        <button type="button" class="nav-item" data-view="view-converter">
+          <span>Chuyển file gốc</span>
+        </button>
+        <button type="button" class="nav-item" data-view="view-shortrules">
+          <span>Quy ước rút gọn</span>
+        </button>
+
+        <!-- Nhóm Quản trị (chỉ hiện khi vào trang Admin) -->
+        <div id="adminNavGroup" style="display:none;">
+          <div class="nav-group-label">Quản trị</div>
+          <button type="button" class="nav-item" data-view="view-admin-rules">
+            <span>Quản lý quy ước</span>
+          </button>
+          <button type="button" class="nav-item" data-view="view-admin-form">
+            <span>Form báo cáo hệ thống</span>
+          </button>
+        </div>
+      </nav>
+    </aside>
+
+    <!-- Vùng cuộn nội dung chính -->
+    <main class="main-scroll">
+      <div class="container">
+
+        <!-- ==================== VIEW 1: TẢI DỮ LIỆU ==================== -->
+        <section class="view-panel active" id="view-upload">
+          <div class="card">
+            <div class="card-header">
+              <span class="card-title">Tải dữ liệu đầu vào (Nhận cả file chuẩn lẫn CSV/XLSX gốc TCVN3)</span>
+              <div style="display:flex; gap:6px; flex-wrap:wrap;">
+                <button type="button" class="btn btn-sm" id="btnLoadQuickTest">Nạp dữ liệu kiểm thử</button>
+                <button type="button" class="btn btn-sm" id="btnClearLoadedData">Xóa dữ liệu đã nạp</button>
+              </div>
+            </div>
+            <div class="grid-2">
+              <div class="file-box">
+                <span class="label">a) File giao hàng "dg1" (Code, Tên khách hàng, Điểm giao hàng, Ship / rDoc_number...)</span>
+                <input type="file" id="inputDg1File" accept=".xlsx,.csv" class="input">
+                <div class="label" id="dg1StatusText">Chưa tải file dg1.</div>
+              </div>
+              <div class="file-box">
+                <span class="label">b) Các file sản phẩm "50", "54" (Chọn nhiều file cùng lúc, tự lọc sheet Code | San pham hoặc 45 cột)</span>
+                <input type="file" id="inputProductFiles" accept=".xlsx,.csv" multiple class="input">
+                <div class="label" id="prodStatusText">Chưa tải file sản phẩm.</div>
+              </div>
+            </div>
+
+            <!-- Ô tải nhanh File Điều xe ngay tại Bước 1 -->
+            <div class="file-box" style="margin-top:12px; border-color:#60a5fa; background:#eff6ff44;">
+              <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+                <span class="label" style="color:#1e3a8a; font-weight:600;">c) File "Điều xe" (Tùy chọn — đọc cột STT &amp; Shipment như 340, 351+353 để tách từng file &lt;STT&gt;.xlsx theo Form Báo Cáo QC rồi gom vào 1 file .zip)</span>
+                <button type="button" class="btn btn-sm btn-primary" id="btnGoToDispatchFromStep1">Mở mục 5. Xuất theo Điều xe (.zip) →</button>
+              </div>
+              <input type="file" id="inputDispatchFileStep1" accept=".xlsx,.csv" class="input">
+              <div class="label" id="dispatchStep1StatusText">Chưa tải file Điều xe.</div>
+            </div>
+
+            <div class="field-row" style="margin-top:12px; justify-content:flex-end;">
+              <button type="button" class="btn btn-primary" id="btnGoToSelect">Tiếp tục: Chọn &amp; xử lý →</button>
+            </div>
+          </div>
+        </section>
+
+        <!-- ==================== VIEW 2: CHỌN & XỬ LÝ ==================== -->
+        <section class="view-panel" id="view-select">
+          <div class="card">
+            <div class="card-header">
+              <span class="card-title">Chọn Ship và Code (Hợp của các Ship đã chọn + Code đã chọn + Code dán tay)</span>
+              <button type="button" class="btn btn-primary" id="btnRunProcess">Xử lý dữ liệu →</button>
+            </div>
+
+            <div class="grid-2">
+              <!-- Danh sách Ship -->
+              <div>
+                <div class="field-row" style="justify-content:space-between;">
+                  <span class="label">Danh sách Ship (<span id="countSelectedShips">0</span> đã chọn)</span>
+                  <div style="display:flex; gap:4px;">
+                    <button type="button" class="btn btn-sm" id="btnSelectAllShips">Chọn tất cả</button>
+                    <button type="button" class="btn btn-sm" id="btnUnselectAllShips">Bỏ chọn</button>
+                  </div>
+                </div>
+                <div class="field-row">
+                  <input type="text" id="searchShipInput" class="input" placeholder="Tìm mã Ship...">
+                </div>
+                <div class="list-box" id="shipListContainer"></div>
+              </div>
+
+              <!-- Danh sách Code -->
+              <div>
+                <div class="field-row" style="justify-content:space-between;">
+                  <span class="label">Danh sách Code (<span id="countSelectedCodes">0</span> đã chọn)</span>
+                  <div style="display:flex; gap:4px; flex-wrap:wrap;">
+                    <button type="button" class="btn btn-sm" id="btnSelectNoShipCodes">Chọn code không có Ship</button>
+                    <button type="button" class="btn btn-sm" id="btnSelectAllCodes">Chọn tất cả</button>
+                    <button type="button" class="btn btn-sm" id="btnUnselectAllCodes">Bỏ chọn</button>
+                  </div>
+                </div>
+                <div class="field-row">
+                  <input type="text" id="searchCodeInput" class="input" placeholder="Tìm Code, tên khách hoặc điểm giao...">
+                </div>
+                <div class="list-box" id="codeListContainer"></div>
+              </div>
+            </div>
+
+            <div class="grid-2" style="margin-top:12px;">
+              <div>
+                <span class="label">Dán thêm danh sách Code (cách nhau bởi dấu phẩy, khoảng trắng hoặc xuống dòng)</span>
+                <textarea id="pasteCodesInput" rows="3" class="textarea" style="margin-top:4px;" placeholder="Dán mã Code..."></textarea>
+              </div>
+              <div style="display:flex; flex-direction:column; gap:8px;">
+                <div>
+                  <span class="label">Thứ tự từ khóa sắp xếp sản phẩm (cách nhau dấu phẩy)</span>
+                  <input type="text" id="sortKeywordsInput" class="input" style="margin-top:4px;" value="5kg, 2kg, 1kg, TF, 500g, Khay, Go">
+                </div>
+                <div class="field-row" style="margin-top:4px;">
+                  <label class="label">Số dòng tối đa mỗi vùng (N):</label>
+                  <input type="number" id="maxRowsPerZoneInput" class="input" value="25" min="5" max="100" style="width:80px;">
+                  <label style="display:inline-flex; align-items:center; gap:6px; cursor:pointer; margin-left:10px;">
+                    <input type="checkbox" id="chkOnlyProductMode">
+                    <span>Chỉ lấy tên sản phẩm (không lấy tên khách)</span>
+                  </label>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ==================== VIEW 3: KẾT QUẢ ==================== -->
+        <section class="view-panel" id="view-result">
+          <div class="card">
+            <div class="card-header">
+              <span class="card-title">Xuất Excel Kết quả &amp; Xem trước</span>
+              <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                <input type="text" id="exportFileNameInput" class="input" value="Ket_qua_giao_hang" style="width:210px;" placeholder="Tên file xuất...">
+                <label style="display:inline-flex; align-items:center; gap:5px; cursor:pointer;">
+                  <input type="checkbox" id="chkStandardPrintSetup" checked>
+                  <span>Vùng in A4 (Trang x/y)</span>
+                </label>
+                <button type="button" class="btn btn-success" id="btnExportStandardExcel">Tải Excel Kết quả (.xlsx)</button>
+                <button type="button" class="btn btn-primary" id="btnGoToFormFill">Điền Form Báo Cáo →</button>
+              </div>
+            </div>
+
+            <div class="alert-box" id="resultWarningsBox"></div>
+
+            <div class="field-row" style="margin-top:8px;">
+              <span class="status-pill ok" id="resultSummaryPill">Chưa có dữ liệu xử lý</span>
+            </div>
+
+            <div class="table-wrap" style="margin-top:8px; max-height:440px; overflow-y:auto;">
+              <table id="previewResultTable">
+                <thead id="previewResultThead">
+                  <tr><th>Khách hàng</th><th>Sản phẩm</th></tr>
+                </thead>
+                <tbody id="previewResultTbody">
+                  <tr><td colspan="2" style="text-align:center; color:#64748b;">Chưa có dữ liệu. Hãy chọn dữ liệu và bấm Xử lý.</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- ==================== VIEW 4: ĐIỀN FORM BÁO CÁO ==================== -->
+        <section class="view-panel" id="view-form">
+          <div class="card">
+            <div class="card-header">
+              <span class="card-title">Điền Form Báo Cáo (Nới Vùng 1 lên 25 dòng, Nhân bản Vùng 2, Giữ Text Box Chữ Ký)</span>
+            </div>
+
+            <div class="grid-2">
+              <div class="file-box">
+                <span class="label">Form báo cáo đang dùng: <strong id="activeFormNameLabel">Form hệ thống (Mặc định)</strong></span>
+                <span class="label">Tải file Form .xlsx khác (tạm thời cho phiên này):</span>
+                <input type="file" id="inputCustomFormFile" accept=".xlsx" class="input">
+                <div class="label" id="customFormStatus">Tự dò cột J (Khách hàng / Customer) &amp; cột K (Sản phẩm / Product) đến dòng Ghi chú.</div>
+              </div>
+
+              <div style="display:flex; flex-direction:column; gap:10px;">
+                <div>
+                  <span class="label">Tên file báo cáo (cũng là tiêu đề ghi vào ô J4, J43, J81...):</span>
+                  <input type="text" id="formOutputFileNameInput" class="input" value="Bao_cao_QC_Giao_hang" style="margin-top:4px;">
+                </div>
+                <div class="field-row">
+                  <label style="display:inline-flex; align-items:center; gap:6px; cursor:pointer;">
+                    <input type="checkbox" id="chkWriteFileNameJ4" checked>
+                    <span>Ghi tên file vào ô J dòng thứ 4 mỗi vùng (J4, J43, J81...)</span>
+                  </label>
+                </div>
+                <div class="field-row">
+                  <label style="display:inline-flex; align-items:center; gap:6px; cursor:pointer;">
+                    <input type="checkbox" id="chkFormPrintSetup" checked>
+                    <span>Thiết lập in A4 ngang (81%, ngắt trang từng vùng, Trang x/y)</span>
+                  </label>
+                </div>
+                <div>
+                  <button type="button" class="btn btn-success" id="btnExportFilledForm">Xuất File Báo Cáo Đã Điền (.xlsx)</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ==================== VIEW 5: XUẤT HÀNG LOẠT THEO FILE ĐIỀU XE (.ZIP) ==================== -->
+        <section class="view-panel" id="view-dispatch">
+          <div class="card">
+            <div class="card-header">
+              <span class="card-title">Xuất hàng loạt Form Báo Cáo QC theo file "Điều xe" (Tách từng file &lt;STT&gt;.xlsx &amp; gom vào 1 file .zip)</span>
+              <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                <span class="status-pill ok" id="dispatchSummaryPill">Chưa tải file Điều xe</span>
+              </div>
+            </div>
+
+            <div class="grid-2">
+              <div class="file-box">
+                <span class="label">1. Tải file "Điều xe" (.xlsx hoặc .csv có cột STT và Shipment):</span>
+                <input type="file" id="inputDispatchFile" accept=".xlsx,.csv" class="input">
+                <div class="field-row" style="margin-top:4px; margin-bottom:0;">
+                  <label class="label" style="white-space:nowrap;">Chọn trang tính (Ngày điều xe):</label>
+                  <select id="selectDispatchSheet" class="select" style="flex:1;" disabled>
+                    <option value="">-- Chưa có file Điều xe --</option>
+                  </select>
+                </div>
+                <div class="label" id="dispatchFileInfoText" style="color:#1e40af;">
+                  Tự động bỏ qua dòng không có số Shipment; hỗ trợ ô gộp nhiều Ship bằng dấu cộng (vd: 340 → 41.xlsx, 351+353 → 48.xlsx).
+                </div>
+              </div>
+
+              <div style="display:flex; flex-direction:column; gap:8px;">
+                <div>
+                  <span class="label">2. Tên file nén (.zip) khi tải về:</span>
+                  <input type="text" id="dispatchZipFileNameInput" class="input" value="Bao_cao_QC_Dieu_xe.zip" style="margin-top:4px;">
+                </div>
+                <div class="field-row" style="margin-bottom:2px;">
+                  <label style="display:inline-flex; align-items:center; gap:6px; cursor:pointer;">
+                    <input type="checkbox" id="chkDispatchWriteJ4" checked>
+                    <span>Ghi số STT vào ô J4, J43, J81... của mỗi Form Báo Cáo QC</span>
+                  </label>
+                </div>
+                <div class="field-row" style="margin-bottom:2px;">
+                  <label style="display:inline-flex; align-items:center; gap:6px; cursor:pointer;">
+                    <input type="checkbox" id="chkDispatchPrintSetup" checked>
+                    <span>Thiết lập in A4 ngang (81%, ngắt trang từng vùng, Trang x/y)</span>
+                  </label>
+                </div>
+                <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-top:2px;">
+                  <button type="button" class="btn btn-success" id="btnExportDispatchZip" disabled>
+                    Tải gói ZIP các chuyến đã chọn (.zip)
+                  </button>
+                  <span class="label" id="dispatchProgressText" style="color:#15803d; font-weight:600;"></span>
+                </div>
+              </div>
+            </div>
+
+            <div class="field-row" style="margin-top:12px; justify-content:space-between;">
+              <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                <input type="text" id="searchDispatchInput" class="input" placeholder="Tìm STT, số Ship (vd: 340, 351+353), biển số..." style="width:280px;">
+                <label style="display:inline-flex; align-items:center; gap:5px; cursor:pointer;">
+                  <input type="checkbox" id="chkDispatchOnlyMatched">
+                  <span>Chỉ hiện chuyến có dữ liệu khớp trong dg1</span>
+                </label>
+              </div>
+              <div style="display:flex; gap:6px; flex-wrap:wrap;">
+                <button type="button" class="btn btn-sm" id="btnSelectMatchedDispatch">Chọn các chuyến khớp dg1</button>
+                <button type="button" class="btn btn-sm" id="btnSelectAllDispatch">Chọn tất cả</button>
+                <button type="button" class="btn btn-sm" id="btnUnselectAllDispatch">Bỏ chọn</button>
+              </div>
+            </div>
+
+            <div class="table-wrap" style="margin-top:6px; max-height:430px; overflow-y:auto;">
+              <table>
+                <thead>
+                  <tr>
+                    <th style="width:42px; text-align:center;">Chọn</th>
+                    <th style="width:95px;">Tên file (STT)</th>
+                    <th style="width:150px;">Số Ship (Shipment)</th>
+                    <th style="width:140px;">Biển số / Tuyến</th>
+                    <th>Khách trên Điều xe (tham khảo)</th>
+                    <th style="width:210px;">Kết quả khớp dg1 &amp; Sản phẩm</th>
+                    <th style="width:115px; text-align:center;">Tải lẻ Form QC</th>
+                  </tr>
+                </thead>
+                <tbody id="dispatchTableTbody">
+                  <tr>
+                    <td colspan="7" style="text-align:center; color:#64748b;">
+                      Chưa có dữ liệu Điều xe. Hãy tải file Điều xe lên hoặc bấm "Nạp dữ liệu kiểm thử" ở Bước 1.
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- ==================== VIEW 6: CHUYỂN FILE GỐC ==================== -->
+        <section class="view-panel" id="view-converter">
+          <div class="card">
+            <div class="card-header">
+              <span class="card-title">Chuyển file gốc (Giải mã TCVN3 / Windows-1252, xuất chuẩn dg1 hoặc file 50)</span>
+              <button type="button" class="btn btn-primary" id="btnDownloadAllConvertedZip" disabled>Tải tất cả (.zip)</button>
+            </div>
+            <div class="file-box">
+              <span class="label">Chọn nhiều file CSV hoặc XLSX gốc:</span>
+              <input type="file" id="inputConverterFiles" accept=".csv,.xlsx" multiple class="input">
+            </div>
+            <div class="table-wrap" style="margin-top:10px;">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Tên file gốc</th>
+                    <th>Loại nhận diện</th>
+                    <th>Số dòng hợp lệ</th>
+                    <th>Tải về</th>
+                  </tr>
+                </thead>
+                <tbody id="converterResultTbody">
+                  <tr><td colspan="4" style="text-align:center; color:#64748b;">Chưa chọn file.</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- ==================== VIEW 7: QUY ƯỚC RÚT GỌN ==================== -->
+        <section class="view-panel" id="view-shortrules">
+          <div class="card">
+            <div class="card-header">
+              <span class="card-title">Quy ước rút gọn (Khách hàng 3 cột &amp; Sản phẩm 2 cột)</span>
+              <div style="display:flex; gap:6px; flex-wrap:wrap;">
+                <!-- Nút Cập nhật chỉ hiện cho Admin -->
+                <button type="button" class="btn btn-warning" id="btnAdminSyncFromLoaded" style="display:none;">
+                  + Cập nhật mục mới từ file đang tải vào hệ thống
+                </button>
+              </div>
+            </div>
+
+            <div class="grid-2">
+              <div class="file-box">
+                <span class="label">1. Quy ước Khách hàng (<span id="countCustRulesLabel">0</span> mục)</span>
+                <div class="field-row">
+                  <button type="button" class="btn btn-sm" id="btnDownloadCustSample">Tải file mẫu Khách hàng (.xlsx)</button>
+                </div>
+                <span class="label">Tải file quy ước Khách hàng lên (áp dụng ngay):</span>
+                <input type="file" id="inputUploadCustRuleFile" accept=".xlsx" class="input">
+              </div>
+
+              <div class="file-box">
+                <span class="label">2. Quy ước Sản phẩm (<span id="countProdRulesLabel">0</span> mục)</span>
+                <div class="field-row">
+                  <button type="button" class="btn btn-sm" id="btnDownloadProdSample">Tải file mẫu Sản phẩm (.xlsx)</button>
+                </div>
+                <span class="label">Tải file quy ước Sản phẩm lên (áp dụng ngay):</span>
+                <input type="file" id="inputUploadProdRuleFile" accept=".xlsx" class="input">
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ==================== VIEW 8: ADMIN - QUẢN LÝ QUY ƯỚC ==================== -->
+        <section class="view-panel" id="view-admin-rules">
+          <!-- Khung đăng nhập Admin -->
+          <div class="card" id="adminLoginCard">
+            <div class="card-header">
+              <span class="card-title">Đăng nhập Quản trị (Mật khẩu cài đặt máy chủ)</span>
+            </div>
+            <div class="field-row" style="max-width:420px;">
+              <input type="password" id="adminPasswordInput" class="input" placeholder="Nhập mật khẩu Admin (mặc định: admin123)">
+              <button type="button" class="btn btn-primary" id="btnAdminLoginSubmit">Đăng nhập</button>
+            </div>
+            <div class="label" id="adminLoginError" style="color:#dc2626;"></div>
+          </div>
+
+          <!-- Khung quản lý sau khi đăng nhập -->
+          <div class="card" id="adminManageRulesCard" style="display:none;">
+            <div class="card-header">
+              <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                <span class="card-title">Quản lý Quy ước rút gọn</span>
+                <span class="status-pill ok" id="adminVersionBadge">Phiên bản: v1</span>
+              </div>
+              <div style="display:flex; gap:6px; flex-wrap:wrap;">
+                <button type="button" class="btn btn-sm" id="btnAdminTabCust">Tab Khách hàng</button>
+                <button type="button" class="btn btn-sm" id="btnAdminTabProd">Tab Sản phẩm</button>
+                <button type="button" class="btn btn-success btn-sm" id="btnAdminSaveServer">Lưu lên hệ thống</button>
+                <button type="button" class="btn btn-sm" id="btnAdminLogout">Đăng xuất</button>
+              </div>
+            </div>
+
+            <div class="field-row" style="justify-content:space-between;">
+              <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; flex:1;">
+                <input type="text" id="adminSearchInput" class="input" placeholder="Tìm kiếm..." style="max-width:240px;">
+                <label style="display:inline-flex; align-items:center; gap:5px; cursor:pointer;">
+                  <input type="checkbox" id="chkAdminFilterUnshortened">
+                  <span>Chỉ dòng chưa rút gọn (tô vàng)</span>
+                </label>
+              </div>
+              <div style="display:flex; gap:6px; flex-wrap:wrap;">
+                <button type="button" class="btn btn-sm" id="btnAdminAddRow">+ Thêm dòng</button>
+                <label class="btn btn-sm" style="cursor:pointer;">
+                  Nhập Excel
+                  <input type="file" id="inputAdminImportExcel" accept=".xlsx" style="display:none;">
+                </label>
+                <button type="button" class="btn btn-sm" id="btnAdminExportExcel">Tải về Excel</button>
+              </div>
+            </div>
+
+            <div class="table-wrap" style="margin-top:8px;">
+              <table>
+                <thead id="adminRulesThead"></thead>
+                <tbody id="adminRulesTbody"></tbody>
+              </table>
+            </div>
+
+            <div class="field-row" style="justify-content:space-between; margin-top:10px;">
+              <span class="label" id="adminPaginationInfo">Trang 1 / 1</span>
+              <div style="display:flex; gap:6px;">
+                <button type="button" class="btn btn-sm" id="btnAdminPrevPage">← Trước</button>
+                <button type="button" class="btn btn-sm" id="btnAdminNextPage">Sau →</button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ==================== VIEW 9: ADMIN - FORM BÁO CÁO ==================== -->
+        <section class="view-panel" id="view-admin-form">
+          <div class="card">
+            <div class="card-header">
+              <span class="card-title">Quản lý Form Báo Cáo Hệ Thống</span>
+            </div>
+            <div class="grid-2">
+              <div class="file-box">
+                <span class="label">Form hiện tại trên hệ thống:</span>
+                <strong id="adminCurrentFormName">Form_Bao_Cao_QC_Mac_Dinh.xlsx</strong>
+                <span class="label" id="adminCurrentFormMeta">Số vùng dò được: 2 vùng</span>
+                <div class="field-row" style="margin-top:6px;">
+                  <button type="button" class="btn btn-sm" id="btnAdminDownloadCurrentForm">Tải form hiện tại về (.xlsx)</button>
+                </div>
+              </div>
+              <div class="file-box">
+                <span class="label">Tải Form mới thay thế lên hệ thống (Tự kiểm tra vùng cột J &amp; K):</span>
+                <input type="file" id="inputAdminReplaceForm" accept=".xlsx" class="input">
+                <div class="label" id="adminReplaceFormStatus">Chọn file .xlsx để kiểm tra và lưu lên hệ thống.</div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+      </div>
+    </main>
+
+    <!-- Thông báo nhanh -->
+    <div class="toast-bar" id="toastBar"></div>
+  </div>
+</body>
+</html>
